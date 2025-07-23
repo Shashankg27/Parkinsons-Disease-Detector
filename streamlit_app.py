@@ -104,7 +104,7 @@ if option == "📤 Upload CSV":
             result_df = pd.concat([metadata_df.reset_index(drop=True), 
                                    feature_df.reset_index(drop=True)], axis=1)
             result_df["Prediction"] = predictions
-            result_df["Confidence"] = (probs * 100).round(2).astype(str) + "%"
+            result_df["Confidence"] = str((probs * 100).round(2).astype(str)) + "%"
 
             st.success("✅ Prediction completed.")
             st.dataframe(result_df)
