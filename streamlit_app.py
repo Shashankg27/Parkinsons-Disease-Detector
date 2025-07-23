@@ -80,14 +80,14 @@ if option == "📤 Upload CSV":
             if missing:
                 st.error(f"❌ Missing required features: {missing}")
             else:
-                feature_df = full_df[feature_order]
+                feature_df = full_df[feature_order]  # force correct order
 
                 # Clean and convert to numeric
                 for col in feature_order:
                     feature_df[col] = feature_df[col].astype(str).str.strip()
                     feature_df[col] = pd.to_numeric(feature_df[col], errors='coerce')
 
-                # Drop rows with any NaNs (invalid entries)
+                # Drop rows with NaNs (from invalid values)
                 invalid_rows = feature_df.isnull().any(axis=1)
                 if invalid_rows.any():
                     st.warning(f"⚠️ {invalid_rows.sum()} row(s) contained invalid data and were dropped.")
@@ -97,13 +97,18 @@ if option == "📤 Upload CSV":
                     st.error("❌ No valid rows left after cleaning the data.")
                     st.stop()
 
-                # DEBUG: show types
+                # Debug: Confirm column types and order
                 st.write("✅ Cleaned Data Types:", feature_df.dtypes)
+                st.write("✅ Column Order:", list(feature_df.columns))
+                st.write("✅ Shape Before Transform:", feature_df.shape)
 
                 original_feature_df = feature_df.copy()
 
                 # Preprocess
-                transformed = pd.DataFrame(pt.transform(feature_df), columns=feature_order)
+                transformed_array = pt.transform(feature_df)
+                st.write("✅ PowerTransformer Output dtype:", transformed_array.dtype)
+
+                transformed = pd.DataFrame(transformed_array, columns=feature_order)
                 scaled = pd.DataFrame(scaler.transform(transformed), columns=feature_order)
 
                 # Predict
@@ -111,7 +116,10 @@ if option == "📤 Upload CSV":
                 probs = model.predict_proba(scaled)[:, 1]
 
                 # Merge all outputs
-                result_df = pd.concat([metadata_df.reset_index(drop=True), original_feature_df.reset_index(drop=True)], axis=1)
+                result_df = pd.concat([
+                    metadata_df.reset_index(drop=True),
+                    original_feature_df.reset_index(drop=True)
+                ], axis=1)
                 result_df["Prediction"] = predictions
                 result_df["Confidence"] = (probs * 100).round(2).astype(str) + "%"
 
