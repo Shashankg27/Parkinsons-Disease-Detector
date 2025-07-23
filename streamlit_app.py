@@ -48,10 +48,8 @@ def load_model_and_preprocessors():
 
     return model, feature_columns, scaler, pt
 
-
 # Load model and preprocessors
 model, feature_order, scaler, pt = load_model_and_preprocessors()
-
 
 # ------------------------ Streamlit Interface ------------------------ #
 st.title("🧠 Parkinson’s Disease Prediction App")
@@ -83,6 +81,18 @@ if option == "📤 Upload CSV":
                 st.error(f"❌ Missing required features: {missing}")
             else:
                 feature_df = full_df[feature_order]
+
+                # Convert all data to numeric
+                feature_df = feature_df.apply(pd.to_numeric, errors='coerce')
+
+                # Drop rows with non-numeric or missing values
+                if feature_df.isnull().values.any():
+                    st.warning("⚠️ Some values in the file could not be converted to numbers and were dropped.")
+                    feature_df.dropna(inplace=True)
+                    if feature_df.empty:
+                        st.error("❌ No valid rows left after removing non-numeric entries.")
+                        st.stop()
+
                 original_feature_df = feature_df.copy()
 
                 # Preprocess
@@ -94,7 +104,7 @@ if option == "📤 Upload CSV":
                 probs = model.predict_proba(scaled)[:, 1]
 
                 # Merge all outputs
-                result_df = pd.concat([metadata_df, original_feature_df], axis=1)
+                result_df = pd.concat([metadata_df.reset_index(drop=True), original_feature_df.reset_index(drop=True)], axis=1)
                 result_df["Prediction"] = predictions
                 result_df["Confidence"] = (probs * 100).round(2).astype(str) + "%"
 
