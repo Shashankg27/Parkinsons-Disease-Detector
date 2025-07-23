@@ -82,16 +82,23 @@ if option == "📤 Upload CSV":
             else:
                 feature_df = full_df[feature_order]
 
-                # Convert all data to numeric
-                feature_df = feature_df.apply(pd.to_numeric, errors='coerce')
+                # Clean and convert to numeric
+                for col in feature_order:
+                    feature_df[col] = feature_df[col].astype(str).str.strip()
+                    feature_df[col] = pd.to_numeric(feature_df[col], errors='coerce')
 
-                # Drop rows with non-numeric or missing values
-                if feature_df.isnull().values.any():
-                    st.warning("⚠️ Some values in the file could not be converted to numbers and were dropped.")
-                    feature_df.dropna(inplace=True)
-                    if feature_df.empty:
-                        st.error("❌ No valid rows left after removing non-numeric entries.")
-                        st.stop()
+                # Drop rows with any NaNs (invalid entries)
+                invalid_rows = feature_df.isnull().any(axis=1)
+                if invalid_rows.any():
+                    st.warning(f"⚠️ {invalid_rows.sum()} row(s) contained invalid data and were dropped.")
+                    feature_df = feature_df[~invalid_rows]
+
+                if feature_df.empty:
+                    st.error("❌ No valid rows left after cleaning the data.")
+                    st.stop()
+
+                # DEBUG: show types
+                st.write("✅ Cleaned Data Types:", feature_df.dtypes)
 
                 original_feature_df = feature_df.copy()
 
