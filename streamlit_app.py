@@ -70,6 +70,7 @@ if option == "📤 Upload CSV":
             metadata_df = full_df[metadata_cols] if metadata_cols else pd.DataFrame()
 
             # Drop target label if present
+            full_df.drop(columns=["PatientID"], inplace=True, errors="ignore")
             full_df.drop(columns=["Diagnosis"], inplace=True, errors="ignore")
 
             # Check for missing or extra features
