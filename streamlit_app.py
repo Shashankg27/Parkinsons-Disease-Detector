@@ -2,29 +2,23 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler, PowerTransformer
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, PowerTransformer
 from imblearn.over_sampling import SMOTE
 
+st.set_page_config(page_title="Parkinson’s Disease Prediction App", layout="centered")
+
 @st.cache_resource
-def load_model_and_features():
-    df = pd.read_csv('parkinsons_disease_data.csv')
+def load_model_and_preprocessors():
+    df = pd.read_csv("parkinsons_disease_data.csv")
     df.drop_duplicates(inplace=True)
-    df.drop(["DoctorInCharge", "PatientID"], axis=1, inplace=True)
+    df.drop(["DoctorInCharge", "PatientID"], axis=1, errors="ignore", inplace=True)
 
-    numerical_columns = [
-        'Age', 'BMI', 'SystolicBP', 'DiastolicBP', 'CholesterolTotal',
-        'CholesterolLDL', 'CholesterolHDL', 'CholesterolTriglycerides', 'UPDRS',
-        'MoCA', 'FunctionalAssessment',
-        'Gender', 'Ethnicity', 'EducationLevel', 'Smoking', 'AlcoholConsumption',
-        'PhysicalActivity', 'DietQuality', 'SleepQuality', 'FamilyHistoryParkinsons',
-        'TraumaticBrainInjury', 'Hypertension', 'Diabetes', 'Depression', 'Stroke',
-        'Tremor', 'Rigidity', 'Bradykinesia', 'PosturalInstability', 'SpeechProblems',
-        'SleepDisorders', 'Constipation'
-    ]
+    # Feature columns
+    feature_columns = df.columns.tolist()
+    feature_columns.remove("Diagnosis")
 
-    # Remove outliers from numerical features
-    for col in numerical_columns:
+    # Remove outliers
+    for col in feature_columns:
         Q1 = df[col].quantile(0.25)
         Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
@@ -32,74 +26,112 @@ def load_model_and_features():
         upper_bound = Q3 + 1.5 * IQR
         df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
 
-    # Power transformation on all numerical columns
-    pt = PowerTransformer(method='yeo-johnson')
-    df[numerical_columns] = pt.fit_transform(df[numerical_columns])
+    # Power transformation
+    pt = PowerTransformer(method="yeo-johnson")
+    df[feature_columns] = pt.fit_transform(df[feature_columns])
 
-    # Scale numerical features
+    # Scaling
     scaler = StandardScaler()
-    df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
+    df[feature_columns] = scaler.fit_transform(df[feature_columns])
 
-    # Split into features and label
-    X = df.drop("Diagnosis", axis=1)
+    # Features and labels
+    X = df[feature_columns]
     y = df["Diagnosis"]
-    feature_order = X.columns.tolist()
 
-    # Oversample minority class
-    sm = SMOTE(random_state=300)
+    # Handle imbalance
+    sm = SMOTE(random_state=42)
     X_resampled, y_resampled = sm.fit_resample(X, y)
 
-    # Train/test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_resampled, y_resampled, test_size=0.2, random_state=42
-    )
-
     # Train model
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_resampled, y_resampled)
 
-    return model, numerical_columns, scaler, pt, feature_order
+    return model, feature_columns, scaler, pt
 
 
-# ---------------- Streamlit UI ---------------- #
+# Load model and preprocessors
+model, feature_order, scaler, pt = load_model_and_preprocessors()
+
+
+# ------------------------ Streamlit Interface ------------------------ #
 st.title("🧠 Parkinson’s Disease Prediction App")
-st.write("Enter the values for each feature below:")
 
-# Load model and preprocessing tools
-model, numerical_columns, scaler, pt, feature_order = load_model_and_features()
+st.markdown("Choose one of the following options to predict Parkinson’s Disease:")
+option = st.radio("Select Input Method", ["📤 Upload CSV", "✍️ Manual Entry"])
 
-st.subheader("Enter your medical and demographic information below:")
+if option == "📤 Upload CSV":
+    st.subheader("Upload a CSV file")
+    uploaded_file = st.file_uploader("Upload test dataset CSV", type=["csv"])
 
-input_data = {}
+    if uploaded_file:
+        try:
+            full_df = pd.read_csv(uploaded_file)
 
-# Collect numerical input
-for col in numerical_columns:
-    val = st.number_input(f"{col}", min_value=-1000.0, value=0.0, step=0.01)
-    input_data[col] = val
+            # Preserve metadata columns if available
+            metadata_cols = [col for col in ["PatientID", "DoctorInCharge"] if col in full_df.columns]
+            metadata_df = full_df[metadata_cols] if metadata_cols else pd.DataFrame()
 
-# Predict button
-if st.button("Predict"):
-    try:
-        input_df = pd.DataFrame([input_data])
+            # Drop target label if present
+            full_df.drop(columns=["Diagnosis"], inplace=True, errors="ignore")
 
-        # Reorder columns to match training feature order
-        input_df = input_df[feature_order]
+            # Ensure required features are present
+            feature_cols_in_file = full_df.columns.intersection(feature_order)
+            missing = set(feature_order) - set(feature_cols_in_file)
+            extra = set(full_df.columns) - set(feature_order) - set(metadata_cols)
 
-        # Apply PowerTransformer and scaler
-        input_df[numerical_columns] = pt.transform(input_df[numerical_columns])
-        input_df[numerical_columns] = scaler.transform(input_df[numerical_columns])
+            if missing:
+                st.error(f"❌ Missing required features: {missing}")
+            else:
+                feature_df = full_df[feature_order]
+                original_feature_df = feature_df.copy()
 
-        # Predict
-        prediction = model.predict(input_df)[0]
-        probability = model.predict_proba(input_df)[0][1]
+                # Preprocess
+                transformed = pd.DataFrame(pt.transform(feature_df), columns=feature_order)
+                scaled = pd.DataFrame(scaler.transform(transformed), columns=feature_order)
 
-        # Display result
-        if prediction == 1:
-            st.error("⚠️ Likely Parkinson’s Disease detected.")
-        else:
-            st.success("✅ Unlikely to have Parkinson’s Disease.")
+                # Predict
+                predictions = model.predict(scaled)
+                probs = model.predict_proba(scaled)[:, 1]
 
-        st.info(f"🧮 Model confidence: {probability:.2%}")
+                # Merge all outputs
+                result_df = pd.concat([metadata_df, original_feature_df], axis=1)
+                result_df["Prediction"] = predictions
+                result_df["Confidence"] = (probs * 100).round(2).astype(str) + "%"
 
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
+                st.success("✅ Prediction completed.")
+                st.dataframe(result_df)
+
+                csv = result_df.to_csv(index=False).encode("utf-8")
+                st.download_button("Download Results as CSV", csv, "predictions.csv", "text/csv")
+
+        except Exception as e:
+            st.error(f"⚠️ Error processing file: {e}")
+
+elif option == "✍️ Manual Entry":
+    st.subheader("Enter feature values manually")
+
+    user_input = {}
+    for col in feature_order:
+        user_input[col] = st.number_input(f"{col}", value=0.0, step=0.01)
+
+    if st.button("Predict"):
+        try:
+            input_df = pd.DataFrame([user_input])[feature_order]
+            original_input = input_df.copy()
+
+            # Preprocess
+            input_df = pd.DataFrame(pt.transform(input_df), columns=feature_order)
+            input_df = pd.DataFrame(scaler.transform(input_df), columns=feature_order)
+
+            prediction = model.predict(input_df)[0]
+            confidence = model.predict_proba(input_df)[0][1]
+
+            if prediction == 1:
+                st.error("⚠️ Likely Parkinson’s Disease detected.")
+            else:
+                st.success("✅ Unlikely to have Parkinson’s Disease.")
+
+            st.info(f"🧮 Model confidence: {confidence:.2%}")
+
+        except Exception as e:
+            st.error(f"Error during prediction: {e}")
