@@ -104,7 +104,9 @@ if option == "📤 Upload CSV":
             result_df = pd.concat([metadata_df.reset_index(drop=True), 
                                    feature_df.reset_index(drop=True)], axis=1)
             result_df["Prediction"] = predictions
-            result_df["Confidence"] = (probs * 100).round(2).map(lambda x: f"{x}%")
+            # result_df["Prediction"] = predictions
+            result_df["Confidence"] = pd.Series((probs * 100).round(2)).map(lambda x: f"{x}%")
+
 
             st.success("✅ Prediction completed.")
             st.dataframe(result_df)
