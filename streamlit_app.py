@@ -41,7 +41,6 @@ def load_model_and_preprocessors():
 
     return model, feature_columns, scaler, pt
 
-
 model, feature_order, scaler, pt = load_model_and_preprocessors()
 
 st.title("🧠 Parkinson’s Disease Prediction App")
@@ -56,10 +55,6 @@ if option == "📤 Upload CSV":
     if uploaded_file:
         try:
             full_df = pd.read_csv(uploaded_file)
-
-            st.write("✅ Raw Uploaded Data Preview", full_df.head())
-            st.write("✅ Raw Dtypes:", full_df.dtypes)
-
             metadata_cols = [col for col in ["PatientID", "DoctorInCharge"] if col in full_df.columns]
             metadata_df = full_df[metadata_cols] if metadata_cols else pd.DataFrame()
 
@@ -67,7 +62,6 @@ if option == "📤 Upload CSV":
 
             feature_cols_in_file = full_df.columns.intersection(feature_order)
             missing = set(feature_order) - set(feature_cols_in_file)
-            extra = set(full_df.columns) - set(feature_order) - set(metadata_cols)
 
             if missing:
                 st.error(f"❌ Missing required features: {missing}")
@@ -81,21 +75,13 @@ if option == "📤 Upload CSV":
 
             invalid_rows = feature_df.isnull().any(axis=1)
             if invalid_rows.any():
-                st.warning(f"⚠️ Dropping {invalid_rows.sum()} row(s) due to invalid numeric conversion.")
                 feature_df = feature_df[~invalid_rows]
 
             if feature_df.empty:
                 st.error("❌ No valid rows left after cleaning.")
                 st.stop()
 
-            st.write("✅ Cleaned Data Types:", feature_df.dtypes)
-            st.write("✅ Cleaned Data Preview:", feature_df.head())
-
-            st.info("⏳ Running PowerTransformer...")
-            arr = pt.transform(feature_df)
-            st.write("✅ Transform successful. Transformed dtype:", arr.dtype)
-
-            transformed = pd.DataFrame(arr, columns=feature_order)
+            transformed = pd.DataFrame(pt.transform(feature_df), columns=feature_order)
             scaled = pd.DataFrame(scaler.transform(transformed), columns=feature_order)
 
             predictions = model.predict(scaled)
@@ -104,9 +90,7 @@ if option == "📤 Upload CSV":
             result_df = pd.concat([metadata_df.reset_index(drop=True), 
                                    feature_df.reset_index(drop=True)], axis=1)
             result_df["Prediction"] = predictions
-            # result_df["Prediction"] = predictions
             result_df["Confidence"] = pd.Series((probs * 100).round(2)).map(lambda x: f"{x}%")
-
 
             st.success("✅ Prediction completed.")
             st.dataframe(result_df)
@@ -129,13 +113,11 @@ elif option == "✍️ Manual Entry":
     if st.button("Predict"):
         try:
             input_df = pd.DataFrame([user_input])[feature_order]
-            original_input = input_df.copy()
+            transformed = pd.DataFrame(pt.transform(input_df), columns=feature_order)
+            scaled = pd.DataFrame(scaler.transform(transformed), columns=feature_order)
 
-            input_df = pd.DataFrame(pt.transform(input_df), columns=feature_order)
-            input_df = pd.DataFrame(scaler.transform(input_df), columns=feature_order)
-
-            prediction = model.predict(input_df)[0]
-            confidence = model.predict_proba(input_df)[0][1]
+            prediction = model.predict(scaled)[0]
+            confidence = model.predict_proba(scaled)[0][1]
 
             if prediction == 1:
                 st.error("⚠️ Likely Parkinson’s Disease detected.")
